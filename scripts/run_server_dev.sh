@@ -13,18 +13,6 @@ fi
 
 source "$CONFIG_FILE"
 
-PROJECT_NAME="${PROJECT_NAME:-LoRa}"
-SERVER_HOST="${SERVER_HOST:-0.0.0.0}"
-SERVER_PORT="${SERVER_PORT:-8000}"
-
-if [ -z "$SERVER_HOST" ]; then
-    SERVER_HOST="0.0.0.0"
-fi
-
-if [ -z "$SERVER_PORT" ]; then
-    SERVER_PORT="8000"
-fi
-
 cd "$SERVER_DIR"
 
 if [ ! -d "$SERVER_DIR/venv" ]; then
