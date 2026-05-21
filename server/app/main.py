@@ -1,7 +1,8 @@
+import logging
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from app.core.config import (
@@ -13,10 +14,17 @@ from app.core.config import (
     DB_NAME,
 )
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | LoRaServer | %(message)s",
+)
+
+logger = logging.getLogger("lora_server")
+
 app = FastAPI(
     title=f"{PROJECT_NAME} Central Server",
     description="Central VPS-compatible control server for LoRa gateway and distributed LoRa nodes.",
-    version="0.1.0",
+    version="0.1.1",
 )
 
 commands: Dict[str, Dict[str, Any]] = {}
@@ -57,18 +65,53 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    client_host = request.client.host if request.client else "unknown"
+    logger.info("HTTP IN  | %s %s | from=%s", request.method, request.url.path, client_host)
+
+    response = await call_next(request)
+
+    logger.info(
+        "HTTP OUT | %s %s | status=%s",
+        request.method,
+        request.url.path,
+        response.status_code,
+    )
+
+    return response
+
+
+@app.on_event("startup")
+def on_startup():
+    logger.info("SERVER START | project=%s | api=%s", PROJECT_NAME, SERVER_API_BASE_URL)
+    logger.info(
+        "CONFIG       | db_engine=%s | db_host=%s | db_name=%s | gateway_default=%s",
+        DB_ENGINE,
+        DB_HOST,
+        DB_NAME,
+        GATEWAY_NAME,
+    )
+    logger.info("MODE         | storage=in_memory | maria_db=not_connected_yet")
+
+
 @app.get("/")
 def root():
+    logger.info("ROOT         | server info requested")
+
     return {
         "project": PROJECT_NAME,
         "role": "central_server",
         "status": "running",
         "api": SERVER_API_BASE_URL,
+        "storage": "in_memory",
     }
 
 
 @app.get("/health")
 def health():
+    logger.info("HEALTH       | ok")
+
     return {
         "status": "ok",
         "time": now_iso(),
@@ -83,6 +126,14 @@ def health():
 
 @app.post("/api/devices/register")
 def register_device(request: RegisterRequest):
+    logger.info(
+        "REGISTER     | device_id=%s | type=%s | firmware=%s | activation_key=%s",
+        request.device_id,
+        request.device_type,
+        request.firmware_version,
+        "provided" if request.activation_key else "empty",
+    )
+
     statuses[request.device_id] = {
         "device_id": request.device_id,
         "device_type": request.device_type,
@@ -90,6 +141,12 @@ def register_device(request: RegisterRequest):
         "firmware_version": request.firmware_version,
         "updated_at": now_iso(),
     }
+
+    logger.info(
+        "REGISTER OK  | device_id=%s | total_devices=%s",
+        request.device_id,
+        len(statuses),
+    )
 
     return {
         "result": "registered",
@@ -114,6 +171,15 @@ def create_command(request: CommandRequest):
 
     commands[request.target_id] = command_data
 
+    logger.info(
+        "COMMAND NEW  | msg_id=%s | target=%s | command=%s | channel=%s | value=%s",
+        msg_id,
+        request.target_id,
+        request.command,
+        request.channel,
+        request.value,
+    )
+
     return {
         "result": "command_created",
         "command": command_data,
@@ -125,11 +191,21 @@ def get_command(device_id: str):
     command = commands.get(device_id)
 
     if not command:
+        logger.info("COMMAND GET  | device_id=%s | result=no_command", device_id)
+
         return {
             "device_id": device_id,
             "command": None,
             "status": "no_command",
         }
+
+    logger.info(
+        "COMMAND GET  | device_id=%s | msg_id=%s | command=%s | status=%s",
+        device_id,
+        command.get("msg_id"),
+        command.get("command"),
+        command.get("status"),
+    )
 
     return {
         "device_id": device_id,
@@ -139,6 +215,15 @@ def get_command(device_id: str):
 
 @app.post("/api/devices/{device_id}/status")
 def update_status(device_id: str, request: StatusRequest):
+    logger.info(
+        "STATUS IN    | device_id=%s | status=%s | message=%s | battery=%s | rssi=%s",
+        device_id,
+        request.status,
+        request.message,
+        request.battery,
+        request.rssi,
+    )
+
     statuses[device_id] = {
         "device_id": device_id,
         "status": request.status,
@@ -148,6 +233,8 @@ def update_status(device_id: str, request: StatusRequest):
         "updated_at": now_iso(),
     }
 
+    logger.info("STATUS SAVED | device_id=%s | total_devices=%s", device_id, len(statuses))
+
     return {
         "result": "status_saved",
         "device_id": device_id,
@@ -156,6 +243,14 @@ def update_status(device_id: str, request: StatusRequest):
 
 @app.post("/api/devices/{device_id}/command/ack")
 def acknowledge_command(device_id: str, request: AckRequest):
+    logger.info(
+        "ACK IN       | device_id=%s | msg_id=%s | result=%s | message=%s",
+        device_id,
+        request.msg_id,
+        request.result,
+        request.message,
+    )
+
     acks[request.msg_id] = {
         "device_id": device_id,
         "msg_id": request.msg_id,
@@ -168,6 +263,18 @@ def acknowledge_command(device_id: str, request: AckRequest):
         commands[device_id]["status"] = "acknowledged"
         commands[device_id]["ack_result"] = request.result
 
+        logger.info(
+            "ACK SAVED    | device_id=%s | msg_id=%s | command_status=acknowledged",
+            device_id,
+            request.msg_id,
+        )
+    else:
+        logger.warning(
+            "ACK ORPHAN   | device_id=%s | msg_id=%s | command_not_found_for_device",
+            device_id,
+            request.msg_id,
+        )
+
     return {
         "result": "ack_saved",
         "device_id": device_id,
@@ -177,6 +284,8 @@ def acknowledge_command(device_id: str, request: AckRequest):
 
 @app.get("/api/devices")
 def list_devices():
+    logger.info("DEVICES LIST | total_devices=%s", len(statuses))
+
     return {
         "gateway_default": GATEWAY_NAME,
         "devices": statuses,
@@ -185,6 +294,13 @@ def list_devices():
 
 @app.get("/api/debug/state")
 def debug_state():
+    logger.info(
+        "DEBUG STATE  | commands=%s | statuses=%s | acks=%s",
+        len(commands),
+        len(statuses),
+        len(acks),
+    )
+
     return {
         "commands": commands,
         "statuses": statuses,
