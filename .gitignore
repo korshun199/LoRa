@@ -31,3 +31,4 @@ secrets/
 config.local.*
 *.key
 *.pem
+.lora.env
