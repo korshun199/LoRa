@@ -32,3 +32,4 @@ config.local.*
 *.key
 *.pem
 .lora.env
+server/venv/
