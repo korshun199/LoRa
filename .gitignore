@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
+# PlatformIO / Arduino
+.pio/
+.vscode/
+*.elf
+*.bin
+*.hex
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite
+
+# Linux
+*~
+*.swp
+
+# Build
+build/
+dist/
+
+# Secrets
+secrets/
+config.local.*
+*.key
+*.pem

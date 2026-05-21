@@ -1,0 +1,17 @@
+services:
+  mariadb:
+    image: mariadb:11
+    container_name: lora_mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: change_me_root
+      MARIADB_DATABASE: lora_db
+      MARIADB_USER: lora_user
+      MARIADB_PASSWORD: change_me_user
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+volumes:
+  mariadb_data:
