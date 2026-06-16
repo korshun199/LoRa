@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from app.db.database import check_database_connection
-from app.db.repositories import save_device, save_command, save_ack, save_status, get_latest_command, get_db_debug_state, list_devices, get_latest_status, get_status_history, get_command_history, get_device_overview, get_device_overview, get_device_overview
+from app.db.repositories import save_device, save_command, save_ack, save_status, get_latest_command, get_db_debug_state, list_devices, get_latest_status, get_status_history, get_command_history, get_device_overview, get_device_overview, get_device_overview, get_device_overview
 from app.core.config import (
     PROJECT_NAME,
     SERVER_API_BASE_URL,
