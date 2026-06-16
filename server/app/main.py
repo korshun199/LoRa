@@ -395,15 +395,10 @@ def debug_db_state():
 
 @app.get("/api/debug/state")
 def debug_state():
-    logger.info(
-        "DEBUG STATE  | commands=%s | statuses=%s | acks=%s",
-        len(commands),
-        len(statuses),
-        len(acks),
-    )
+    logger.info("DEBUG STATE  | ram_storage=disabled | use=/api/debug/db")
 
     return {
-        "commands": commands,
-        "statuses": statuses,
-        "acks": acks,
+        "status": "ram_storage_disabled",
+        "message": "Use /api/debug/db for MariaDB-backed debug state.",
+        "db_debug_url": "/api/debug/db",
     }
