@@ -106,3 +106,31 @@ def get_latest_command(target_id: str) -> dict | None:
         return None
 
     return dict(row)
+
+
+def get_db_debug_state() -> dict:
+    sql_counts = {
+        "devices": text("SELECT COUNT(*) FROM devices"),
+        "commands": text("SELECT COUNT(*) FROM commands"),
+        "statuses": text("SELECT COUNT(*) FROM statuses"),
+        "acks": text("SELECT COUNT(*) FROM acks"),
+    }
+
+    sql_latest_command = text("""
+        SELECT msg_id, target_id, command, value_text, channel, status, ack_result
+        FROM commands
+        ORDER BY id DESC
+        LIMIT 1
+    """)
+
+    with engine.connect() as connection:
+        counts = {
+            name: connection.execute(sql).scalar()
+            for name, sql in sql_counts.items()
+        }
+        latest_command = connection.execute(sql_latest_command).mappings().first()
+
+    return {
+        "counts": counts,
+        "latest_command": dict(latest_command) if latest_command else None,
+    }

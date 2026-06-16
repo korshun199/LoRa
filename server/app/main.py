@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from app.db.database import check_database_connection
-from app.db.repositories import save_device, save_command, save_ack, save_status, get_latest_command
+from app.db.repositories import save_device, save_command, save_ack, save_status, get_latest_command, get_db_debug_state
 from app.core.config import (
     PROJECT_NAME,
     SERVER_API_BASE_URL,
@@ -398,6 +398,24 @@ def list_devices():
         "gateway_default": GATEWAY_NAME,
         "devices": statuses,
     }
+
+
+@app.get("/api/debug/db")
+def debug_db_state():
+    try:
+        state = get_db_debug_state()
+        logger.info("DEBUG DB     | devices=%s | commands=%s | statuses=%s | acks=%s",
+                    state["counts"].get("devices"),
+                    state["counts"].get("commands"),
+                    state["counts"].get("statuses"),
+                    state["counts"].get("acks"))
+        return state
+    except Exception as exc:
+        logger.error("DEBUG DB     | failed | error=%s", exc)
+        return {
+            "error": str(exc),
+            "status": "failed",
+        }
 
 
 @app.get("/api/debug/state")
