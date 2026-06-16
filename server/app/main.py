@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from app.db.database import check_database_connection
-from app.db.repositories import save_device, save_command, save_ack, save_status, save_status
+from app.db.repositories import save_device, save_command, save_ack, save_status, save_status, save_status
 from app.core.config import (
     PROJECT_NAME,
     SERVER_API_BASE_URL,
@@ -262,6 +262,18 @@ def update_status(device_id: str, request: StatusRequest):
         "rssi": request.rssi,
         "updated_at": now_iso(),
     }
+
+    try:
+        save_status(
+            device_id=device_id,
+            status=request.status,
+            message=request.message,
+            battery=request.battery,
+            rssi=request.rssi,
+        )
+        logger.info("DB STATUS    | saved device_id=%s | status=%s", device_id, request.status)
+    except Exception as exc:
+        logger.error("DB STATUS    | save failed device_id=%s | error=%s", device_id, exc)
 
     try:
         save_status(
