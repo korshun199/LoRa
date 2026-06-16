@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+
+set -u
+
+PROJECT_ROOT="/home/work/LoRa"
+CONFIG_FILE="$PROJECT_ROOT/.lora.env"
+BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
+
+OK=0
+FAIL=0
+
+ok(){ echo "[OK]   $1"; OK=$((OK+1)); }
+fail(){ echo "[FAIL] $1"; FAIL=$((FAIL+1)); }
+header(){ echo; echo "=== $1 ==="; }
+
+load_config(){
+    if [ -f "$CONFIG_FILE" ]; then
+        source "$CONFIG_FILE"
+        ok "config loaded: $CONFIG_FILE"
+    else
+        fail "config not found: $CONFIG_FILE"
+    fi
+}
+
+test_files(){
+    header "FILES"
+    for file in \
+        ".lora.env" \
+        ".lora.env.example" \
+        "server/app/main.py" \
+        "server/app/core/config.py" \
+        "server/app/db/database.py" \
+        "server/requirements.txt" \
+        "scripts/run_server_dev.sh" \
+        "scripts/test_api_cycle.sh" \
+        "scripts/init_db.sh" \
+        "docs/dev-server-mvp.md" \
+        "docs/next-steps.md"
+    do
+        [ -f "$PROJECT_ROOT/$file" ] && ok "$file" || fail "$file missing"
+    done
+}
+
+test_git(){
+    header "GIT"
+    cd "$PROJECT_ROOT" || { fail "cannot cd to project"; return; }
+
+    BRANCH="$(git branch --show-current 2>/dev/null || true)"
+    [ "$BRANCH" = "main" ] && ok "branch main" || fail "branch is $BRANCH"
+
+    if git status --short | grep -q .; then
+        fail "working tree has changes"
+        git status --short
+    else
+        ok "working tree clean"
+    fi
+
+    git remote -v | grep -q "github.com:korshun199/LoRa.git" && ok "GitHub remote OK" || fail "GitHub remote wrong"
+}
+
+test_db(){
+    header "DATABASE"
+
+    load_config
+
+    DB_HOST="${DB_HOST:-127.0.0.1}"
+    DB_PORT="${DB_PORT:-3306}"
+    DB_NAME="${DB_NAME:-lora_db}"
+    DB_USER="${DB_USER:-lora_user}"
+    DB_PASSWORD="${DB_PASSWORD:-change_me_later}"
+
+    command -v mariadb >/dev/null 2>&1 && ok "mariadb client installed" || fail "mariadb client missing"
+
+    if systemctl is-active --quiet mariadb 2>/dev/null; then
+        ok "mariadb service active"
+    else
+        fail "mariadb service not active"
+    fi
+
+    if mariadb -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -e "SELECT 1;" >/dev/null 2>&1; then
+        ok "database login OK: $DB_NAME"
+    else
+        fail "database login failed: $DB_NAME"
+        return
+    fi
+
+    for table in devices commands statuses acks; do
+        if mariadb -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -N -e "SHOW TABLES LIKE '$table';" | grep -q "$table"; then
+            ok "table exists: $table"
+        else
+            fail "table missing: $table"
+        fi
+    done
+}
+
+test_server(){
+    header "SERVER"
+    if curl -s "$BASE_URL/health" | grep -q '"status":"ok"'; then
+        ok "FastAPI health OK"
+    else
+        fail "FastAPI health failed: $BASE_URL/health"
+    fi
+}
+
+test_api(){
+    header "API"
+    if bash "$PROJECT_ROOT/scripts/test_api_cycle.sh" "$BASE_URL" >/tmp/lora_api_test.log 2>&1; then
+        ok "API cycle passed"
+        tail -n 5 /tmp/lora_api_test.log
+    else
+        fail "API cycle failed"
+        cat /tmp/lora_api_test.log
+    fi
+}
+
+test_connect(){
+    header "CONNECT"
+    ping -c 1 -W 2 github.com >/dev/null 2>&1 && ok "github.com reachable" || fail "github.com unreachable"
+
+    if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+        ok "GitHub SSH authentication OK"
+    else
+        fail "GitHub SSH authentication failed"
+    fi
+}
+
+summary(){
+    echo
+    echo "=== RESULT ==="
+    echo "OK:   $OK"
+    echo "FAIL: $FAIL"
+
+    [ "$FAIL" -eq 0 ] && echo "STATUS: OK" && exit 0
+    echo "STATUS: FAIL"
+    exit 1
+}
+
+help(){
+    echo "Usage:"
+    echo "  ./scripts/lora_test --all"
+    echo "  ./scripts/lora_test --files"
+    echo "  ./scripts/lora_test --git"
+    echo "  ./scripts/lora_test --db"
+    echo "  ./scripts/lora_test --server"
+    echo "  ./scripts/lora_test --api"
+    echo "  ./scripts/lora_test --connect"
+}
+
+case "${1:---help}" in
+    --all) test_files; test_git; test_db; test_connect; test_server; test_api; summary ;;
+    --files) test_files; summary ;;
+    --git) test_git; summary ;;
+    --db|--bd) test_db; summary ;;
+    --server) test_server; summary ;;
+    --api) test_api; summary ;;
+    --connect|--connetc) test_connect; summary ;;
+    --help|-h) help ;;
+    *) echo "Unknown option: $1"; help; exit 1 ;;
+esac
