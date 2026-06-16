@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from app.db.database import check_database_connection
-from app.db.repositories import save_device, save_command, save_ack, save_status, get_latest_command, get_db_debug_state, list_devices, get_latest_status, get_status_history, get_command_history, get_device_overview, get_device_overview, get_device_overview, get_device_overview
+from app.db.repositories import save_device, save_command, save_ack, save_status, get_latest_command, get_db_debug_state, list_devices, get_latest_status, get_status_history, get_command_history, get_device_overview, get_dashboard_summary, get_device_overview, get_device_overview, get_device_overview
 from app.core.config import (
     PROJECT_NAME,
     SERVER_API_BASE_URL,
@@ -403,6 +403,28 @@ def acknowledge_command(device_id: str, request: AckRequest):
         "device_id": device_id,
         "msg_id": request.msg_id,
     }
+
+
+@app.get("/api/dashboard")
+def get_dashboard():
+    try:
+        dashboard = get_dashboard_summary()
+        logger.info(
+            "DASHBOARD    | devices=%s | commands=%s | acks=%s | statuses=%s",
+            dashboard["counts"].get("devices_total"),
+            dashboard["counts"].get("commands_total"),
+            dashboard["counts"].get("acks_total"),
+            dashboard["counts"].get("statuses_total"),
+        )
+        return dashboard
+    except Exception as exc:
+        logger.error("DASHBOARD    | failed | error=%s", exc)
+        return {
+            "storage": "mariadb",
+            "status": "failed",
+            "error": str(exc),
+        }
+
 
 
 @app.get("/api/devices")

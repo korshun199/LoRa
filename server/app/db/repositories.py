@@ -329,3 +329,44 @@ def get_device_overview(device_id: str) -> dict:
         "status_count": int(status_count or 0),
         "command_count": int(command_count or 0),
     }
+
+
+def get_dashboard_summary() -> dict:
+    counts_sql = {
+        "devices_total": text("SELECT COUNT(*) FROM devices"),
+        "commands_total": text("SELECT COUNT(*) FROM commands"),
+        "acks_total": text("SELECT COUNT(*) FROM acks"),
+        "statuses_total": text("SELECT COUNT(*) FROM statuses"),
+        "online_devices": text("SELECT COUNT(*) FROM devices WHERE status = 'online'"),
+        "registered_devices": text("SELECT COUNT(*) FROM devices WHERE status = 'registered'"),
+    }
+
+    latest_devices_sql = text("""
+        SELECT device_id, device_type, firmware_version, status, updated_at
+        FROM devices
+        ORDER BY updated_at DESC
+        LIMIT 10
+    """)
+
+    latest_commands_sql = text("""
+        SELECT msg_id, target_id, command, value_text, channel, status, ack_result, updated_at
+        FROM commands
+        ORDER BY id DESC
+        LIMIT 10
+    """)
+
+    with engine.connect() as connection:
+        counts = {
+            name: int(connection.execute(sql).scalar() or 0)
+            for name, sql in counts_sql.items()
+        }
+
+        latest_devices = connection.execute(latest_devices_sql).mappings().all()
+        latest_commands = connection.execute(latest_commands_sql).mappings().all()
+
+    return {
+        "storage": "mariadb",
+        "counts": counts,
+        "latest_devices": [dict(row) for row in latest_devices],
+        "latest_commands": [dict(row) for row in latest_commands],
+    }
