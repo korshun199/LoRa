@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from app.db.database import check_database_connection
-from app.db.repositories import save_device, save_command
+from app.db.repositories import save_device, save_command, save_ack
 from app.core.config import (
     PROJECT_NAME,
     SERVER_API_BASE_URL,
@@ -288,6 +288,17 @@ def acknowledge_command(device_id: str, request: AckRequest):
         "message": request.message,
         "updated_at": now_iso(),
     }
+
+    try:
+        save_ack(
+            msg_id=request.msg_id,
+            device_id=device_id,
+            result=request.result,
+            message=request.message,
+        )
+        logger.info("DB ACK       | saved msg_id=%s | device_id=%s", request.msg_id, device_id)
+    except Exception as exc:
+        logger.error("DB ACK       | save failed msg_id=%s | error=%s", request.msg_id, exc)
 
     if device_id in commands:
         commands[device_id]["status"] = "acknowledged"
