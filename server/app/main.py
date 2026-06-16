@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from app.db.database import check_database_connection
-from app.db.repositories import save_device, save_command, save_ack, save_status, get_latest_command, get_db_debug_state, list_devices
+from app.db.repositories import save_device, save_command, save_ack, save_status, get_latest_command, get_db_debug_state, list_devices, get_latest_status
 from app.core.config import (
     PROJECT_NAME,
     SERVER_API_BASE_URL,
@@ -245,6 +245,28 @@ def get_command(device_id: str):
         "status": "no_command",
         "source": "mariadb",
     }
+
+
+@app.get("/api/devices/{device_id}/status/latest")
+def get_device_latest_status(device_id: str):
+    try:
+        status = get_latest_status(device_id)
+        logger.info("STATUS GET   | device_id=%s | found=%s", device_id, bool(status))
+
+        return {
+            "device_id": device_id,
+            "storage": "mariadb",
+            "status": status,
+        }
+    except Exception as exc:
+        logger.error("STATUS GET   | failed device_id=%s | error=%s", device_id, exc)
+        return {
+            "device_id": device_id,
+            "storage": "mariadb",
+            "status": None,
+            "error": str(exc),
+        }
+
 
 
 @app.post("/api/devices/{device_id}/status")

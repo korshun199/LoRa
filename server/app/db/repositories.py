@@ -147,3 +147,18 @@ def list_devices() -> list[dict]:
         rows = connection.execute(sql).mappings().all()
 
     return [dict(row) for row in rows]
+
+
+def get_latest_status(device_id: str) -> dict | None:
+    sql = text("""
+        SELECT device_id, status, message, battery, rssi, created_at
+        FROM statuses
+        WHERE device_id = :device_id
+        ORDER BY id DESC
+        LIMIT 1
+    """)
+
+    with engine.connect() as connection:
+        row = connection.execute(sql, {"device_id": device_id}).mappings().first()
+
+    return dict(row) if row else None
