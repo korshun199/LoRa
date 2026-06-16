@@ -104,14 +104,43 @@ test_server(){
 
 test_api(){
     header "API"
+    load_config
+
+    DB_HOST="${DB_HOST:-127.0.0.1}"
+    DB_PORT="${DB_PORT:-3306}"
+    DB_NAME="${DB_NAME:-lora_db}"
+    DB_USER="${DB_USER:-lora_user}"
+    DB_PASSWORD="${DB_PASSWORD:-change_me_later}"
+
     if bash "$PROJECT_ROOT/scripts/test_api_cycle.sh" "$BASE_URL" >/tmp/lora_api_test.log 2>&1; then
         ok "API cycle passed"
         tail -n 5 /tmp/lora_api_test.log
     else
         fail "API cycle failed"
         cat /tmp/lora_api_test.log
+        return
+    fi
+
+    MSG_ID="$(grep -m1 '^MSG_ID:' /tmp/lora_api_test.log | awk '{print $2}')"
+
+    if [ -z "$MSG_ID" ]; then
+        fail "API test msg_id not found"
+        return
+    fi
+
+    if mariadb -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -N -e "SELECT status FROM commands WHERE msg_id='$MSG_ID';" | grep -q "acknowledged"; then
+        ok "DB command stored and acknowledged: $MSG_ID"
+    else
+        fail "DB command not acknowledged: $MSG_ID"
+    fi
+
+    if mariadb -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -N -e "SELECT result FROM acks WHERE msg_id='$MSG_ID';" | grep -q "done"; then
+        ok "DB ack stored: $MSG_ID"
+    else
+        fail "DB ack missing: $MSG_ID"
     fi
 }
+
 
 test_connect(){
     header "CONNECT"
