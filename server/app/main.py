@@ -349,13 +349,8 @@ def acknowledge_command(device_id: str, request: AckRequest):
         request.message,
     )
 
-    acks[request.msg_id] = {
-        "device_id": device_id,
-        "msg_id": request.msg_id,
-        "result": request.result,
-        "message": request.message,
-        "updated_at": now_iso(),
-    }
+    # ACK storage is now handled by MariaDB.
+    # RAM storage for acknowledgements is intentionally disabled.
 
     try:
         save_ack(
