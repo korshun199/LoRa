@@ -134,3 +134,16 @@ def get_db_debug_state() -> dict:
         "counts": counts,
         "latest_command": dict(latest_command) if latest_command else None,
     }
+
+
+def list_devices() -> list[dict]:
+    sql = text("""
+        SELECT device_id, device_type, firmware_version, status, created_at, updated_at
+        FROM devices
+        ORDER BY updated_at DESC
+    """)
+
+    with engine.connect() as connection:
+        rows = connection.execute(sql).mappings().all()
+
+    return [dict(row) for row in rows]
