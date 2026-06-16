@@ -244,29 +244,13 @@ def get_command(device_id: str):
             "source": "mariadb",
         }
 
-    command = commands.get(device_id)
-
-    if not command:
-        logger.info("COMMAND GET  | device_id=%s | result=no_command", device_id)
-
-        return {
-            "device_id": device_id,
-            "command": None,
-            "status": "no_command",
-        }
-
-    logger.info(
-        "COMMAND GET  | device_id=%s | msg_id=%s | command=%s | status=%s",
-        device_id,
-        command.get("msg_id"),
-        command.get("command"),
-        command.get("status"),
-    )
+    logger.info("COMMAND GET  | device_id=%s | result=no_command", device_id)
 
     return {
         "device_id": device_id,
-        "command": command,
-        "source": "memory",
+        "command": None,
+        "status": "no_command",
+        "source": "mariadb",
     }
 
 
