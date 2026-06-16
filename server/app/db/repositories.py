@@ -182,3 +182,23 @@ def get_status_history(device_id: str, limit: int = 20) -> list[dict]:
         }).mappings().all()
 
     return [dict(row) for row in rows]
+
+
+def get_command_history(target_id: str, limit: int = 20) -> list[dict]:
+    limit = max(1, min(int(limit), 100))
+
+    sql = text("""
+        SELECT msg_id, target_id, command, value_text, channel, status, ack_result, created_at, updated_at
+        FROM commands
+        WHERE target_id = :target_id
+        ORDER BY id DESC
+        LIMIT :limit
+    """)
+
+    with engine.connect() as connection:
+        rows = connection.execute(sql, {
+            "target_id": target_id,
+            "limit": limit,
+        }).mappings().all()
+
+    return [dict(row) for row in rows]

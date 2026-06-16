@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from app.db.database import check_database_connection
-from app.db.repositories import save_device, save_command, save_ack, save_status, get_latest_command, get_db_debug_state, list_devices, get_latest_status, get_status_history
+from app.db.repositories import save_device, save_command, save_ack, save_status, get_latest_command, get_db_debug_state, list_devices, get_latest_status, get_status_history, get_command_history
 from app.core.config import (
     PROJECT_NAME,
     SERVER_API_BASE_URL,
@@ -203,6 +203,29 @@ def create_command(request: CommandRequest):
         "result": "command_created",
         "command": command_data,
     }
+
+
+@app.get("/api/devices/{device_id}/commands/history")
+def get_device_command_history(device_id: str, limit: int = 20):
+    try:
+        history = get_command_history(device_id, limit)
+        logger.info("COMMAND HIST | device_id=%s | count=%s", device_id, len(history))
+
+        return {
+            "device_id": device_id,
+            "storage": "mariadb",
+            "count": len(history),
+            "history": history,
+        }
+    except Exception as exc:
+        logger.error("COMMAND HIST | failed device_id=%s | error=%s", device_id, exc)
+        return {
+            "device_id": device_id,
+            "storage": "mariadb",
+            "status": "failed",
+            "error": str(exc),
+        }
+
 
 
 @app.get("/api/devices/{device_id}/command")
