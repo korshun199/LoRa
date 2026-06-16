@@ -162,3 +162,23 @@ def get_latest_status(device_id: str) -> dict | None:
         row = connection.execute(sql, {"device_id": device_id}).mappings().first()
 
     return dict(row) if row else None
+
+
+def get_status_history(device_id: str, limit: int = 20) -> list[dict]:
+    limit = max(1, min(int(limit), 100))
+
+    sql = text("""
+        SELECT device_id, status, message, battery, rssi, created_at
+        FROM statuses
+        WHERE device_id = :device_id
+        ORDER BY id DESC
+        LIMIT :limit
+    """)
+
+    with engine.connect() as connection:
+        rows = connection.execute(sql, {
+            "device_id": device_id,
+            "limit": limit,
+        }).mappings().all()
+
+    return [dict(row) for row in rows]
