@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
+from app.db.database import check_database_connection
 from app.core.config import (
     PROJECT_NAME,
     SERVER_API_BASE_URL,
@@ -92,7 +93,13 @@ def on_startup():
         DB_NAME,
         GATEWAY_NAME,
     )
-    logger.info("MODE         | storage=in_memory | maria_db=not_connected_yet")
+    db_ok, db_info = check_database_connection()
+    if db_ok:
+        logger.info("DATABASE     | MariaDB connection OK | version=%s", db_info)
+    else:
+        logger.error("DATABASE     | MariaDB connection FAILED | error=%s", db_info)
+
+    logger.info("MODE         | storage=in_memory | maria_db=connection_checked")
 
 
 @app.get("/")
