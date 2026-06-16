@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from app.db.database import check_database_connection
-from app.db.repositories import save_device, save_command, save_ack, save_status, get_latest_command, get_db_debug_state
+from app.db.repositories import save_device, save_command, save_ack, save_status, get_latest_command, get_db_debug_state, list_devices
 from app.core.config import (
     PROJECT_NAME,
     SERVER_API_BASE_URL,
@@ -316,15 +316,24 @@ def acknowledge_command(device_id: str, request: AckRequest):
 
 
 @app.get("/api/devices")
-def list_devices():
-    logger.info("DEVICES LIST | storage=mariadb | use=/api/debug/db")
+def get_devices():
+    try:
+        devices = list_devices()
+        logger.info("DEVICES LIST | storage=mariadb | total_devices=%s", len(devices))
 
-    return {
-        "gateway_default": GATEWAY_NAME,
-        "status": "mariadb_storage_enabled",
-        "message": "Use /api/debug/db for current MariaDB-backed state.",
-        "db_debug_url": "/api/debug/db",
-    }
+        return {
+            "gateway_default": GATEWAY_NAME,
+            "storage": "mariadb",
+            "count": len(devices),
+            "devices": devices,
+        }
+    except Exception as exc:
+        logger.error("DEVICES LIST | failed | error=%s", exc)
+        return {
+            "storage": "mariadb",
+            "status": "failed",
+            "error": str(exc),
+        }
 
 
 @app.get("/api/debug/db")
