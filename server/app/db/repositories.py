@@ -88,3 +88,21 @@ def save_status(
             "battery": battery,
             "rssi": rssi,
         })
+
+
+def get_latest_command(target_id: str) -> dict | None:
+    sql = text("""
+        SELECT msg_id, target_id, command, value_text, channel, status, ack_result
+        FROM commands
+        WHERE target_id = :target_id
+        ORDER BY id DESC
+        LIMIT 1
+    """)
+
+    with engine.connect() as connection:
+        row = connection.execute(sql, {"target_id": target_id}).mappings().first()
+
+    if row is None:
+        return None
+
+    return dict(row)
