@@ -29,9 +29,6 @@ app = FastAPI(
     version="0.1.1",
 )
 
-commands: Dict[str, Dict[str, Any]] = {}
-statuses: Dict[str, Dict[str, Any]] = {}
-acks: Dict[str, Dict[str, Any]] = {}
 
 
 class RegisterRequest(BaseModel):
