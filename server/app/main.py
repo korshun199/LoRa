@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from app.db.database import check_database_connection
+from app.db.repositories import save_device
 from app.core.config import (
     PROJECT_NAME,
     SERVER_API_BASE_URL,
@@ -148,6 +149,16 @@ def register_device(request: RegisterRequest):
         "firmware_version": request.firmware_version,
         "updated_at": now_iso(),
     }
+
+    try:
+        save_device(
+            device_id=request.device_id,
+            device_type=request.device_type,
+            firmware_version=request.firmware_version,
+        )
+        logger.info("DB DEVICE    | saved device_id=%s", request.device_id)
+    except Exception as exc:
+        logger.error("DB DEVICE    | save failed device_id=%s | error=%s", request.device_id, exc)
 
     logger.info(
         "REGISTER OK  | device_id=%s | total_devices=%s",
