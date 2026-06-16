@@ -66,3 +66,25 @@ def save_ack(msg_id: str, device_id: str, result: str, message: str | None = Non
             "msg_id": msg_id,
             "result": result,
         })
+
+
+def save_status(
+    device_id: str,
+    status: str,
+    message: str | None = None,
+    battery: int | None = None,
+    rssi: int | None = None,
+) -> None:
+    sql = text("""
+        INSERT INTO statuses (device_id, status, message, battery, rssi)
+        VALUES (:device_id, :status, :message, :battery, :rssi)
+    """)
+
+    with engine.begin() as connection:
+        connection.execute(sql, {
+            "device_id": device_id,
+            "status": status,
+            "message": message,
+            "battery": battery,
+            "rssi": rssi,
+        })
