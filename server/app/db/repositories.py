@@ -75,13 +75,24 @@ def save_status(
     battery: int | None = None,
     rssi: int | None = None,
 ) -> None:
-    sql = text("""
+    upsert_device = text("""
+        INSERT INTO devices (device_id, device_type, status)
+        VALUES (:device_id, 'node', :status)
+        ON DUPLICATE KEY UPDATE
+            status = VALUES(status)
+    """)
+
+    insert_status = text("""
         INSERT INTO statuses (device_id, status, message, battery, rssi)
         VALUES (:device_id, :status, :message, :battery, :rssi)
     """)
 
     with engine.begin() as connection:
-        connection.execute(sql, {
+        connection.execute(upsert_device, {
+            "device_id": device_id,
+            "status": status,
+        })
+        connection.execute(insert_status, {
             "device_id": device_id,
             "status": status,
             "message": message,
