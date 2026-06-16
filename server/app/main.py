@@ -187,7 +187,8 @@ def create_command(request: CommandRequest):
         "status": "pending",
     }
 
-    commands[request.target_id] = command_data
+    # Command storage is now handled by MariaDB.
+    # RAM storage for commands is intentionally disabled.
 
     try:
         save_command(
