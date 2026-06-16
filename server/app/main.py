@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from app.db.database import check_database_connection
-from app.db.repositories import save_device, save_command, save_ack, save_status, save_status, save_status
+from app.db.repositories import save_device, save_command, save_ack, save_status, get_latest_command
 from app.core.config import (
     PROJECT_NAME,
     SERVER_API_BASE_URL,
@@ -218,6 +218,36 @@ def create_command(request: CommandRequest):
 
 @app.get("/api/devices/{device_id}/command")
 def get_command(device_id: str):
+    try:
+        db_command = get_latest_command(device_id)
+    except Exception as exc:
+        logger.error("DB COMMAND   | read failed device_id=%s | error=%s", device_id, exc)
+        db_command = None
+
+    if db_command:
+        command = {
+            "msg_id": db_command.get("msg_id"),
+            "target_id": db_command.get("target_id"),
+            "command": db_command.get("command"),
+            "value": db_command.get("value_text"),
+            "channel": db_command.get("channel"),
+            "status": db_command.get("status"),
+            "ack_result": db_command.get("ack_result"),
+        }
+
+        logger.info(
+            "DB COMMAND   | read device_id=%s | msg_id=%s | status=%s",
+            device_id,
+            command.get("msg_id"),
+            command.get("status"),
+        )
+
+        return {
+            "device_id": device_id,
+            "command": command,
+            "source": "mariadb",
+        }
+
     command = commands.get(device_id)
 
     if not command:
@@ -240,6 +270,7 @@ def get_command(device_id: str):
     return {
         "device_id": device_id,
         "command": command,
+        "source": "memory",
     }
 
 
