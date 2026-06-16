@@ -231,3 +231,32 @@ def get_device_overview(device_id: str) -> dict:
         "status_count": int(status_count or 0),
         "command_count": int(command_count or 0),
     }
+
+
+def get_device_overview(device_id: str) -> dict:
+    device_sql = text("""
+        SELECT device_id, device_type, firmware_version, status, created_at, updated_at
+        FROM devices
+        WHERE device_id = :device_id
+        LIMIT 1
+    """)
+
+    status_count_sql = text("SELECT COUNT(*) FROM statuses WHERE device_id = :device_id")
+    command_count_sql = text("SELECT COUNT(*) FROM commands WHERE target_id = :device_id")
+
+    with engine.connect() as connection:
+        device = connection.execute(device_sql, {"device_id": device_id}).mappings().first()
+        latest_status = get_latest_status(device_id)
+        latest_command = get_latest_command(device_id)
+        status_count = connection.execute(status_count_sql, {"device_id": device_id}).scalar()
+        command_count = connection.execute(command_count_sql, {"device_id": device_id}).scalar()
+
+    return {
+        "device_id": device_id,
+        "storage": "mariadb",
+        "device": dict(device) if device else None,
+        "latest_status": latest_status,
+        "latest_command": latest_command,
+        "status_count": int(status_count or 0),
+        "command_count": int(command_count or 0),
+    }
