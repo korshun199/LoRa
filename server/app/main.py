@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from app.db.database import check_database_connection
-from app.db.repositories import save_device
+from app.db.repositories import save_device, save_command
 from app.core.config import (
     PROJECT_NAME,
     SERVER_API_BASE_URL,
@@ -188,6 +188,18 @@ def create_command(request: CommandRequest):
     }
 
     commands[request.target_id] = command_data
+
+    try:
+        save_command(
+            msg_id=msg_id,
+            target_id=request.target_id,
+            command=request.command,
+            value_text=request.value,
+            channel=request.channel,
+        )
+        logger.info("DB COMMAND   | saved msg_id=%s | target=%s", msg_id, request.target_id)
+    except Exception as exc:
+        logger.error("DB COMMAND   | save failed msg_id=%s | error=%s", msg_id, exc)
 
     logger.info(
         "COMMAND NEW  | msg_id=%s | target=%s | command=%s | channel=%s | value=%s",
