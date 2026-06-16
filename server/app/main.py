@@ -142,13 +142,8 @@ def register_device(request: RegisterRequest):
         "provided" if request.activation_key else "empty",
     )
 
-    statuses[request.device_id] = {
-        "device_id": request.device_id,
-        "device_type": request.device_type,
-        "status": "registered",
-        "firmware_version": request.firmware_version,
-        "updated_at": now_iso(),
-    }
+    # Device registration storage is now handled by MariaDB.
+    # RAM storage for registered devices is intentionally disabled.
 
     try:
         save_device(
