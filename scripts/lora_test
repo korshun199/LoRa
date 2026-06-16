@@ -128,16 +128,32 @@ test_api(){
         return
     fi
 
-    if mariadb -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -N -e "SELECT status FROM commands WHERE msg_id='$MSG_ID';" | grep -q "acknowledged"; then
-        ok "DB command stored and acknowledged: $MSG_ID"
-    else
-        fail "DB command not acknowledged: $MSG_ID"
-    fi
+    if [ "${LORA_TEST_MODE:-}" = "production_domain" ]; then
+        OVERVIEW="$(curl -s "$BASE_URL/api/devices/node-001/overview")"
 
-    if mariadb -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -N -e "SELECT result FROM acks WHERE msg_id='$MSG_ID';" | grep -q "done"; then
-        ok "DB ack stored: $MSG_ID"
+        echo "$OVERVIEW" | grep -q "$MSG_ID" \
+            && ok "API overview contains command: $MSG_ID" \
+            || fail "API overview missing command: $MSG_ID"
+
+        echo "$OVERVIEW" | grep -q '"status":"acknowledged"' \
+            && ok "API overview command acknowledged: $MSG_ID" \
+            || fail "API overview command not acknowledged: $MSG_ID"
+
+        echo "$OVERVIEW" | grep -q '"ack_result":"done"' \
+            && ok "API overview ack result done: $MSG_ID" \
+            || fail "API overview ack result missing: $MSG_ID"
     else
-        fail "DB ack missing: $MSG_ID"
+        if mariadb -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -N -e "SELECT status FROM commands WHERE msg_id='$MSG_ID';" | grep -q "acknowledged"; then
+            ok "DB command stored and acknowledged: $MSG_ID"
+        else
+            fail "DB command not acknowledged: $MSG_ID"
+        fi
+
+        if mariadb -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -N -e "SELECT result FROM acks WHERE msg_id='$MSG_ID';" | grep -q "done"; then
+            ok "DB ack stored: $MSG_ID"
+        else
+            fail "DB ack missing: $MSG_ID"
+        fi
     fi
 }
 
