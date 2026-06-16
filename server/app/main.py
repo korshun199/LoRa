@@ -155,11 +155,7 @@ def register_device(request: RegisterRequest):
     except Exception as exc:
         logger.error("DB DEVICE    | save failed device_id=%s | error=%s", request.device_id, exc)
 
-    logger.info(
-        "REGISTER OK  | device_id=%s | total_devices=%s",
-        request.device_id,
-        len(statuses),
-    )
+    logger.info("REGISTER OK  | device_id=%s | storage=mariadb", request.device_id)
 
     return {
         "result": "registered",
@@ -265,15 +261,6 @@ def update_status(device_id: str, request: StatusRequest):
         request.rssi,
     )
 
-    statuses[device_id] = {
-        "device_id": device_id,
-        "status": request.status,
-        "message": request.message,
-        "battery": request.battery,
-        "rssi": request.rssi,
-        "updated_at": now_iso(),
-    }
-
     try:
         save_status(
             device_id=device_id,
@@ -286,31 +273,7 @@ def update_status(device_id: str, request: StatusRequest):
     except Exception as exc:
         logger.error("DB STATUS    | save failed device_id=%s | error=%s", device_id, exc)
 
-    try:
-        save_status(
-            device_id=device_id,
-            status=request.status,
-            message=request.message,
-            battery=request.battery,
-            rssi=request.rssi,
-        )
-        logger.info("DB STATUS    | saved device_id=%s | status=%s", device_id, request.status)
-    except Exception as exc:
-        logger.error("DB STATUS    | save failed device_id=%s | error=%s", device_id, exc)
-
-    try:
-        save_status(
-            device_id=device_id,
-            status=request.status,
-            message=request.message,
-            battery=request.battery,
-            rssi=request.rssi,
-        )
-        logger.info("DB STATUS    | saved device_id=%s | status=%s", device_id, request.status)
-    except Exception as exc:
-        logger.error("DB STATUS    | save failed device_id=%s | error=%s", device_id, exc)
-
-    logger.info("STATUS SAVED | device_id=%s | total_devices=%s", device_id, len(statuses))
+    logger.info("STATUS SAVED | device_id=%s | storage=mariadb", device_id)
 
     return {
         "result": "status_saved",
@@ -342,21 +305,11 @@ def acknowledge_command(device_id: str, request: AckRequest):
     except Exception as exc:
         logger.error("DB ACK       | save failed msg_id=%s | error=%s", request.msg_id, exc)
 
-    if device_id in commands:
-        commands[device_id]["status"] = "acknowledged"
-        commands[device_id]["ack_result"] = request.result
-
-        logger.info(
-            "ACK SAVED    | device_id=%s | msg_id=%s | command_status=acknowledged",
-            device_id,
-            request.msg_id,
-        )
-    else:
-        logger.warning(
-            "ACK ORPHAN   | device_id=%s | msg_id=%s | command_not_found_for_device",
-            device_id,
-            request.msg_id,
-        )
+    logger.info(
+        "ACK SAVED    | device_id=%s | msg_id=%s | storage=mariadb",
+        device_id,
+        request.msg_id,
+    )
 
     return {
         "result": "ack_saved",
@@ -367,11 +320,13 @@ def acknowledge_command(device_id: str, request: AckRequest):
 
 @app.get("/api/devices")
 def list_devices():
-    logger.info("DEVICES LIST | total_devices=%s", len(statuses))
+    logger.info("DEVICES LIST | storage=mariadb | use=/api/debug/db")
 
     return {
         "gateway_default": GATEWAY_NAME,
-        "devices": statuses,
+        "status": "mariadb_storage_enabled",
+        "message": "Use /api/debug/db for current MariaDB-backed state.",
+        "db_debug_url": "/api/debug/db",
     }
 
 
