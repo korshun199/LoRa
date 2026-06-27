@@ -4,7 +4,7 @@ set -u
 
 PROJECT_ROOT="/home/work/LoRa"
 CONFIG_FILE="$PROJECT_ROOT/.lora.env"
-BASE_URL="${LORA_TEST_BASE_URL:-${PUBLIC_API_BASE_URL:-${SERVER_API_BASE_URL:-http://127.0.0.1:8000}}}"
+BASE_URL="http://127.0.0.1:8000"
 
 OK=0
 FAIL=0
@@ -20,6 +20,11 @@ load_config(){
     else
         fail "config not found: $CONFIG_FILE"
     fi
+}
+
+set_base_url(){
+    BASE_URL="${LORA_TEST_BASE_URL:-${PUBLIC_API_BASE_URL:-${SERVER_API_BASE_URL:-http://127.0.0.1:8000}}}"
+    ok "test base url: $BASE_URL"
 }
 
 test_files(){
@@ -95,6 +100,9 @@ test_db(){
 
 test_server(){
     header "SERVER"
+    load_config
+    set_base_url
+
     if curl -s "$BASE_URL/health" | grep -q '"status":"ok"'; then
         ok "FastAPI health OK"
     else
@@ -105,6 +113,7 @@ test_server(){
 test_api(){
     header "API"
     load_config
+    set_base_url
 
     DB_HOST="${DB_HOST:-127.0.0.1}"
     DB_PORT="${DB_PORT:-3306}"
