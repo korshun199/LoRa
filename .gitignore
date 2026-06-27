@@ -33,3 +33,4 @@ config.local.*
 *.pem
 .lora.env
 server/venv/
+logs/
