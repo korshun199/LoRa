@@ -35,3 +35,5 @@ config.local.*
 server/venv/
 logs/
 .venv-esptool/
+firmware/xiao_wifi_gateway/include/secrets.h
+.venv-pio/
