@@ -34,3 +34,4 @@ config.local.*
 .lora.env
 server/venv/
 logs/
+.venv-esptool/
