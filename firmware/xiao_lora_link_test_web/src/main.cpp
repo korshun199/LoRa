@@ -60,8 +60,11 @@ struct PeerInfo {
   bool active;
   String callsign;
   String ip;
+  uint32_t firstSeq;
   uint32_t lastSeq;
   uint32_t rxCount;
+  uint32_t lostCount;
+  uint8_t quality;
   float rssi;
   float snr;
   uint32_t lastSeenMs;
@@ -266,12 +269,14 @@ void handlePeers() {
     JsonObject item = arr.add<JsonObject>();
     item["callsign"] = peers[i].callsign;
     item["ip"] = peers[i].ip;
+    item["first_seq"] = peers[i].firstSeq;
     item["last_seq"] = peers[i].lastSeq;
     item["rx_count"] = peers[i].rxCount;
+    item["lost_count"] = peers[i].lostCount;
     item["rssi"] = peers[i].rssi;
     item["snr"] = peers[i].snr;
     item["last_seen_ms"] = now - peers[i].lastSeenMs;
-    item["quality"] = 100;
+    item["quality"] = peers[i].quality;
   }
 
   String out;
@@ -306,11 +311,38 @@ void updatePeerFromBeacon(const String& peerCallsign, const String& peerIp, uint
     return;
   }
 
-  peers[slot].active = true;
-  peers[slot].callsign = peerCallsign;
+  if (!peers[slot].active) {
+    peers[slot].active = true;
+    peers[slot].callsign = peerCallsign;
+    peers[slot].ip = peerIp;
+    peers[slot].firstSeq = seq;
+    peers[slot].lastSeq = seq;
+    peers[slot].rxCount = 0;
+    peers[slot].lostCount = 0;
+    peers[slot].quality = 100;
+  }
+
   peers[slot].ip = peerIp;
   peers[slot].lastSeq = seq;
   peers[slot].rxCount++;
+
+  uint32_t expected = 1;
+  if (peers[slot].lastSeq >= peers[slot].firstSeq) {
+    expected = peers[slot].lastSeq - peers[slot].firstSeq + 1;
+  }
+
+  if (expected > peers[slot].rxCount) {
+    peers[slot].lostCount = expected - peers[slot].rxCount;
+  } else {
+    peers[slot].lostCount = 0;
+  }
+
+  if (expected > 0) {
+    peers[slot].quality = (uint8_t)((peers[slot].rxCount * 100UL) / expected);
+  } else {
+    peers[slot].quality = 0;
+  }
+
   peers[slot].rssi = rssi;
   peers[slot].snr = snr;
   peers[slot].lastSeenMs = millis();
@@ -324,7 +356,11 @@ void updatePeerFromBeacon(const String& peerCallsign, const String& peerIp, uint
   Serial.print(" rssi=");
   Serial.print(rssi);
   Serial.print(" snr=");
-  Serial.println(snr);
+  Serial.print(snr);
+  Serial.print(" quality=");
+  Serial.print(peers[slot].quality);
+  Serial.print("% lost=");
+  Serial.println(peers[slot].lostCount);
 }
 
 void parseBeacon(const String& msg, float rssi, float snr) {
