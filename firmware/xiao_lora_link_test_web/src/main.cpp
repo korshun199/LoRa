@@ -45,6 +45,12 @@ WebServer server(80);
 bool loraOk = false;
 int loraBeginCode = 999;
 
+unsigned long lastBeaconMs = 0;
+const unsigned long BEACON_INTERVAL_MS = 5000;
+uint32_t beaconSeq = 0;
+uint32_t loraTxCount = 0;
+int lastTxCode = 0;
+
 String htmlPage() {
   String html = R"HTML(
 <!doctype html>
@@ -189,6 +195,9 @@ void handleStatus() {
   doc["lora_ok"] = loraOk;
   doc["lora_begin_code"] = loraBeginCode;
   doc["lora_freq_mhz"] = loraFreqMhz;
+  doc["beacon_seq"] = beaconSeq;
+  doc["lora_tx_count"] = loraTxCount;
+  doc["last_tx_code"] = lastTxCode;
 
   String out;
   serializeJson(doc, out);
@@ -215,10 +224,42 @@ void setupLoRa() {
   if (loraBeginCode == RADIOLIB_ERR_NONE) {
     loraOk = true;
     Serial.println("LoRa OK");
+    radio.startReceive();
   } else {
     loraOk = false;
     Serial.println("LoRa ERROR");
   }
+}
+
+void sendBeacon() {
+  if (!loraOk) {
+    return;
+  }
+
+  beaconSeq++;
+
+  String msg = "BEACON|";
+  msg += CALLSIGN;
+  msg += "|";
+  msg += WiFi.softAPIP().toString();
+  msg += "|";
+  msg += String(beaconSeq);
+  msg += "|";
+  msg += String(millis());
+
+  Serial.print("TX beacon: ");
+  Serial.println(msg);
+
+  lastTxCode = radio.transmit(msg);
+
+  Serial.print("transmit -> ");
+  Serial.println(lastTxCode);
+
+  if (lastTxCode == RADIOLIB_ERR_NONE) {
+    loraTxCount++;
+  }
+
+  radio.startReceive();
 }
 
 void setupWeb() {
@@ -254,4 +295,10 @@ void setup() {
 
 void loop() {
   server.handleClient();
+
+  unsigned long now = millis();
+  if (now - lastBeaconMs >= BEACON_INTERVAL_MS) {
+    lastBeaconMs = now;
+    sendBeacon();
+  }
 }
