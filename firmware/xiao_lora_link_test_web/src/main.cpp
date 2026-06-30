@@ -73,6 +73,18 @@ struct PeerInfo {
 const int MAX_PEERS = 16;
 PeerInfo peers[MAX_PEERS];
 
+volatile bool loraPacketReceived = false;
+
+#if defined(ESP32)
+void IRAM_ATTR setLoraPacketReceivedFlag() {
+  loraPacketReceived = true;
+}
+#else
+void setLoraPacketReceivedFlag() {
+  loraPacketReceived = true;
+}
+#endif
+
 String htmlPage() {
   String html = R"HTML(
 <!doctype html>
@@ -390,8 +402,14 @@ void pollLoRaReceive() {
     return;
   }
 
+  if (!loraPacketReceived) {
+    return;
+  }
+
+  loraPacketReceived = false;
+
   String rx;
-  lastRxCode = radio.receive(rx, 250);
+  lastRxCode = radio.readData(rx);
 
   if (lastRxCode == RADIOLIB_ERR_NONE) {
     loraRxCount++;
@@ -403,7 +421,12 @@ void pollLoRaReceive() {
     Serial.println(rx);
 
     parseBeacon(rx, rssi, snr);
+  } else {
+    Serial.print("RX readData error -> ");
+    Serial.println(lastRxCode);
   }
+
+  radio.startReceive();
 }
 
 void setupLoRa() {
@@ -422,6 +445,7 @@ void setupLoRa() {
   if (loraBeginCode == RADIOLIB_ERR_NONE) {
     loraOk = true;
     Serial.println("LoRa OK");
+    radio.setDio1Action(setLoraPacketReceivedFlag);
     radio.startReceive();
   } else {
     loraOk = false;
