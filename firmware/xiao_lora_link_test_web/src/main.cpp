@@ -3,10 +3,13 @@
 #include <WebServer.h>
 #include <ArduinoJson.h>
 #include <RadioLib.h>
+#include <Preferences.h>
 
-// ===== Device defaults =====
-const char* CALLSIGN = "BRATAN";
-const char* AP_SSID = "LORA-BRATAN";
+// ===== Device config =====
+Preferences prefs;
+
+String callsign = "BRATAN";
+String apSsid = "LORA-BRATAN";
 const char* AP_PASS = "12345678";
 
 IPAddress local_ip(192, 168, 4, 10);
@@ -188,7 +191,7 @@ void handleRoot() {
 void handleStatus() {
   StaticJsonDocument<768> doc;
 
-  doc["callsign"] = CALLSIGN;
+  doc["callsign"] = callsign;
   doc["ip"] = WiFi.softAPIP().toString();
   doc["uptime_ms"] = millis();
   doc["wifi_mode"] = "AP";
@@ -231,6 +234,146 @@ void setupLoRa() {
   }
 }
 
+bool parseIpString(const String& ipText, IPAddress& outIp) {
+  int parts[4] = {0, 0, 0, 0};
+  int partIndex = 0;
+  String current = "";
+
+  for (size_t i = 0; i < ipText.length(); i++) {
+    char c = ipText[i];
+
+    if (c == '.') {
+      if (partIndex >= 3 || current.length() == 0) {
+        return false;
+      }
+      parts[partIndex++] = current.toInt();
+      current = "";
+    } else if (isDigit(c)) {
+      current += c;
+    } else {
+      return false;
+    }
+  }
+
+  if (partIndex != 3 || current.length() == 0) {
+    return false;
+  }
+
+  parts[partIndex] = current.toInt();
+
+  for (int i = 0; i < 4; i++) {
+    if (parts[i] < 0 || parts[i] > 255) {
+      return false;
+    }
+  }
+
+  outIp = IPAddress(parts[0], parts[1], parts[2], parts[3]);
+  return true;
+}
+
+void rebuildApSsid() {
+  apSsid = "LORA-" + callsign;
+}
+
+void loadConfig() {
+  prefs.begin("lora-link", true);
+
+  callsign = prefs.getString("callsign", "BRATAN");
+  String ipText = prefs.getString("ip", "192.168.4.10");
+
+  prefs.end();
+
+  if (!parseIpString(ipText, local_ip)) {
+    local_ip = IPAddress(192, 168, 4, 10);
+  }
+
+  gateway = local_ip;
+  rebuildApSsid();
+
+  Serial.println("Loaded config:");
+  Serial.print("CALLSIGN=");
+  Serial.println(callsign);
+  Serial.print("IP=");
+  Serial.println(local_ip);
+  Serial.print("SSID=");
+  Serial.println(apSsid);
+}
+
+void saveConfig(const String& newCallsign, const String& newIpText) {
+  IPAddress parsedIp;
+
+  if (newCallsign.length() < 1 || newCallsign.length() > 24) {
+    Serial.println("CONFIG_ERROR BAD_CALLSIGN");
+    return;
+  }
+
+  if (!parseIpString(newIpText, parsedIp)) {
+    Serial.println("CONFIG_ERROR BAD_IP");
+    return;
+  }
+
+  prefs.begin("lora-link", false);
+  prefs.putString("callsign", newCallsign);
+  prefs.putString("ip", newIpText);
+  prefs.end();
+
+  Serial.print("CONFIG_OK ");
+  Serial.print(newCallsign);
+  Serial.print(" ");
+  Serial.println(newIpText);
+
+  Serial.println("REBOOTING");
+  delay(500);
+  ESP.restart();
+}
+
+void handleSerialCommand() {
+  if (!Serial.available()) {
+    return;
+  }
+
+  String line = Serial.readStringUntil('\n');
+  line.trim();
+
+  if (line.length() == 0) {
+    return;
+  }
+
+  Serial.print("SERIAL_CMD ");
+  Serial.println(line);
+
+  if (line == "SHOW") {
+    Serial.print("CALLSIGN=");
+    Serial.println(callsign);
+    Serial.print("IP=");
+    Serial.println(local_ip);
+    Serial.print("SSID=");
+    Serial.println(apSsid);
+    return;
+  }
+
+  if (line.startsWith("CONFIG ")) {
+    int firstSpace = line.indexOf(' ');
+    int secondSpace = line.indexOf(' ', firstSpace + 1);
+
+    if (secondSpace < 0) {
+      Serial.println("CONFIG_ERROR USAGE CONFIG CALLSIGN IP");
+      return;
+    }
+
+    String newCallsign = line.substring(firstSpace + 1, secondSpace);
+    String newIpText = line.substring(secondSpace + 1);
+    newCallsign.trim();
+    newIpText.trim();
+
+    saveConfig(newCallsign, newIpText);
+    return;
+  }
+
+  Serial.println("UNKNOWN_CMD");
+  Serial.println("AVAILABLE: SHOW | CONFIG CALLSIGN IP");
+}
+
 void sendBeacon() {
   if (!loraOk) {
     return;
@@ -239,7 +382,7 @@ void sendBeacon() {
   beaconSeq++;
 
   String msg = "BEACON|";
-  msg += CALLSIGN;
+  msg += callsign;
   msg += "|";
   msg += WiFi.softAPIP().toString();
   msg += "|";
@@ -265,10 +408,10 @@ void sendBeacon() {
 void setupWeb() {
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(local_ip, gateway, subnet);
-  WiFi.softAP(AP_SSID, AP_PASS);
+  WiFi.softAP(apSsid.c_str(), AP_PASS);
 
   Serial.print("AP SSID: ");
-  Serial.println(AP_SSID);
+  Serial.println(apSsid);
   Serial.print("AP PASS: ");
   Serial.println(AP_PASS);
   Serial.print("AP IP: ");
@@ -289,12 +432,14 @@ void setup() {
   Serial.println();
   Serial.println("=== LoRa Link Test Web ===");
 
+  loadConfig();
   setupLoRa();
   setupWeb();
 }
 
 void loop() {
   server.handleClient();
+  handleSerialCommand();
 
   unsigned long now = millis();
   if (now - lastBeaconMs >= BEACON_INTERVAL_MS) {
