@@ -52,7 +52,23 @@ unsigned long lastBeaconMs = 0;
 const unsigned long BEACON_INTERVAL_MS = 5000;
 uint32_t beaconSeq = 0;
 uint32_t loraTxCount = 0;
+uint32_t loraRxCount = 0;
 int lastTxCode = 0;
+int lastRxCode = 0;
+
+struct PeerInfo {
+  bool active;
+  String callsign;
+  String ip;
+  uint32_t lastSeq;
+  uint32_t rxCount;
+  float rssi;
+  float snr;
+  uint32_t lastSeenMs;
+};
+
+const int MAX_PEERS = 16;
+PeerInfo peers[MAX_PEERS];
 
 String htmlPage() {
   String html = R"HTML(
@@ -175,8 +191,35 @@ async function updateStatus() {
   }
 }
 
+async function updatePeers() {
+  try {
+    const r = await fetch('/api/peers');
+    const peers = await r.json();
+    const tbody = document.getElementById('peers');
+
+    if (!peers.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="muted">Соседи пока не слышны</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = peers.map(p => `
+      <tr>
+        <td>${p.callsign}</td>
+        <td>${p.ip}</td>
+        <td>${p.rssi}</td>
+        <td>${p.snr}</td>
+        <td>${p.quality}% / ${Math.floor(p.last_seen_ms / 1000)} сек</td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    console.log(e);
+  }
+}
+
 setInterval(updateStatus, 1000);
+setInterval(updatePeers, 1000);
 updateStatus();
+updatePeers();
 </script>
 </body>
 </html>
@@ -200,7 +243,9 @@ void handleStatus() {
   doc["lora_freq_mhz"] = loraFreqMhz;
   doc["beacon_seq"] = beaconSeq;
   doc["lora_tx_count"] = loraTxCount;
+  doc["lora_rx_count"] = loraRxCount;
   doc["last_tx_code"] = lastTxCode;
+  doc["last_rx_code"] = lastRxCode;
 
   String out;
   serializeJson(doc, out);
@@ -208,7 +253,121 @@ void handleStatus() {
 }
 
 void handlePeers() {
-  server.send(200, "application/json; charset=utf-8", "[]");
+  StaticJsonDocument<2048> doc;
+  JsonArray arr = doc.to<JsonArray>();
+
+  uint32_t now = millis();
+
+  for (int i = 0; i < MAX_PEERS; i++) {
+    if (!peers[i].active) {
+      continue;
+    }
+
+    JsonObject item = arr.add<JsonObject>();
+    item["callsign"] = peers[i].callsign;
+    item["ip"] = peers[i].ip;
+    item["last_seq"] = peers[i].lastSeq;
+    item["rx_count"] = peers[i].rxCount;
+    item["rssi"] = peers[i].rssi;
+    item["snr"] = peers[i].snr;
+    item["last_seen_ms"] = now - peers[i].lastSeenMs;
+    item["quality"] = 100;
+  }
+
+  String out;
+  serializeJson(doc, out);
+  server.send(200, "application/json; charset=utf-8", out);
+}
+
+int findPeerSlot(const String& peerCallsign) {
+  int freeSlot = -1;
+
+  for (int i = 0; i < MAX_PEERS; i++) {
+    if (peers[i].active && peers[i].callsign == peerCallsign) {
+      return i;
+    }
+
+    if (!peers[i].active && freeSlot < 0) {
+      freeSlot = i;
+    }
+  }
+
+  return freeSlot;
+}
+
+void updatePeerFromBeacon(const String& peerCallsign, const String& peerIp, uint32_t seq, float rssi, float snr) {
+  if (peerCallsign == callsign) {
+    return;
+  }
+
+  int slot = findPeerSlot(peerCallsign);
+  if (slot < 0) {
+    Serial.println("PEER_TABLE_FULL");
+    return;
+  }
+
+  peers[slot].active = true;
+  peers[slot].callsign = peerCallsign;
+  peers[slot].ip = peerIp;
+  peers[slot].lastSeq = seq;
+  peers[slot].rxCount++;
+  peers[slot].rssi = rssi;
+  peers[slot].snr = snr;
+  peers[slot].lastSeenMs = millis();
+
+  Serial.print("PEER ");
+  Serial.print(peerCallsign);
+  Serial.print(" ");
+  Serial.print(peerIp);
+  Serial.print(" seq=");
+  Serial.print(seq);
+  Serial.print(" rssi=");
+  Serial.print(rssi);
+  Serial.print(" snr=");
+  Serial.println(snr);
+}
+
+void parseBeacon(const String& msg, float rssi, float snr) {
+  if (!msg.startsWith("BEACON|")) {
+    return;
+  }
+
+  int p1 = msg.indexOf('|');
+  int p2 = msg.indexOf('|', p1 + 1);
+  int p3 = msg.indexOf('|', p2 + 1);
+  int p4 = msg.indexOf('|', p3 + 1);
+
+  if (p1 < 0 || p2 < 0 || p3 < 0 || p4 < 0) {
+    Serial.println("BAD_BEACON_FORMAT");
+    return;
+  }
+
+  String peerCallsign = msg.substring(p1 + 1, p2);
+  String peerIp = msg.substring(p2 + 1, p3);
+  uint32_t seq = msg.substring(p3 + 1, p4).toInt();
+
+  updatePeerFromBeacon(peerCallsign, peerIp, seq, rssi, snr);
+}
+
+void pollLoRaReceive() {
+  if (!loraOk) {
+    return;
+  }
+
+  String rx;
+  lastRxCode = radio.receive(rx, 250);
+
+  if (lastRxCode == RADIOLIB_ERR_NONE) {
+    loraRxCount++;
+
+    float rssi = radio.getRSSI();
+    float snr = radio.getSNR();
+
+    Serial.print("RX: ");
+    Serial.println(rx);
+
+    parseBeacon(rx, rssi, snr);
+  }
 }
 
 void setupLoRa() {
@@ -440,6 +599,7 @@ void setup() {
 void loop() {
   server.handleClient();
   handleSerialCommand();
+  pollLoRaReceive();
 
   unsigned long now = millis();
   if (now - lastBeaconMs >= BEACON_INTERVAL_MS) {
