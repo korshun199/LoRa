@@ -2,7 +2,9 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ArduinoJson.h>
+#include <RadioLib.h>
 
+// ===== Device defaults =====
 const char* CALLSIGN = "BRATAN";
 const char* AP_SSID = "LORA-BRATAN";
 const char* AP_PASS = "12345678";
@@ -11,7 +13,37 @@ IPAddress local_ip(192, 168, 4, 10);
 IPAddress gateway(192, 168, 4, 10);
 IPAddress subnet(255, 255, 255, 0);
 
+// ===== XIAO ESP32S3 + Wio SX1262 real pin map =====
+// Confirmed working pin map:
+// DIO1=D0(1), BUSY=D1(2), NRST=D2(3), NSS=D3(4), ANT_SW=D4(5)
+// SCK=D8(7), MISO=D9(8), MOSI=D10(9)
+
+#define LORA_DIO1   D0
+#define LORA_BUSY   D1
+#define LORA_RST    D2
+#define LORA_NSS    D3
+#define LORA_ANT_SW D4
+#define LORA_SCK    D8
+#define LORA_MISO   D9
+#define LORA_MOSI   D10
+
+// Частоту потом сделаем настраиваемой.
+// Пока ставим тестовую, как контрольную точку.
+float loraFreqMhz = 868.0;
+
+SPIClass loraSPI(FSPI);
+SX1262 radio = new Module(
+  LORA_NSS,
+  LORA_DIO1,
+  LORA_RST,
+  LORA_BUSY,
+  loraSPI
+);
+
 WebServer server(80);
+
+bool loraOk = false;
+int loraBeginCode = 999;
 
 String htmlPage() {
   String html = R"HTML(
@@ -52,6 +84,14 @@ String htmlPage() {
     .muted {
       color: #9aa7bd;
     }
+    .ok {
+      color: #8cffb3;
+      font-weight: 700;
+    }
+    .bad {
+      color: #ff8c8c;
+      font-weight: 700;
+    }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -66,9 +106,6 @@ String htmlPage() {
       color: #9aa7bd;
       font-weight: 600;
     }
-    .ok {
-      color: #8cffb3;
-    }
   </style>
 </head>
 <body>
@@ -80,7 +117,8 @@ String htmlPage() {
       <div class="big" id="callsign">...</div>
       <p>IP: <span id="ip">...</span></p>
       <p>Uptime: <span id="uptime">...</span> сек</p>
-      <p>Status: <span class="ok">WEB ONLINE</span></p>
+      <p>LoRa: <span id="lora">...</span></p>
+      <p>Частота: <span id="freq">...</span> MHz</p>
     </div>
 
     <div class="card">
@@ -97,7 +135,7 @@ String htmlPage() {
         </thead>
         <tbody id="peers">
           <tr>
-            <td colspan="5" class="muted">LoRa пока не включена</td>
+            <td colspan="5" class="muted">Маяки соседей пока не включены</td>
           </tr>
         </tbody>
       </table>
@@ -113,6 +151,16 @@ async function updateStatus() {
     document.getElementById('callsign').textContent = s.callsign;
     document.getElementById('ip').textContent = s.ip;
     document.getElementById('uptime').textContent = Math.floor(s.uptime_ms / 1000);
+    document.getElementById('freq').textContent = s.lora_freq_mhz;
+
+    const lora = document.getElementById('lora');
+    if (s.lora_ok) {
+      lora.textContent = 'OK';
+      lora.className = 'ok';
+    } else {
+      lora.textContent = 'ERROR ' + s.lora_begin_code;
+      lora.className = 'bad';
+    }
   } catch(e) {
     console.log(e);
   }
@@ -132,13 +180,15 @@ void handleRoot() {
 }
 
 void handleStatus() {
-  StaticJsonDocument<512> doc;
+  StaticJsonDocument<768> doc;
 
   doc["callsign"] = CALLSIGN;
   doc["ip"] = WiFi.softAPIP().toString();
   doc["uptime_ms"] = millis();
   doc["wifi_mode"] = "AP";
-  doc["lora"] = "not_ready";
+  doc["lora_ok"] = loraOk;
+  doc["lora_begin_code"] = loraBeginCode;
+  doc["lora_freq_mhz"] = loraFreqMhz;
 
   String out;
   serializeJson(doc, out);
@@ -149,13 +199,29 @@ void handlePeers() {
   server.send(200, "application/json; charset=utf-8", "[]");
 }
 
-void setup() {
-  Serial.begin(115200);
-  delay(1000);
+void setupLoRa() {
+  Serial.println("Starting LoRa...");
 
-  Serial.println();
-  Serial.println("=== LoRa Link Test Web ===");
+  pinMode(LORA_ANT_SW, OUTPUT);
+  digitalWrite(LORA_ANT_SW, HIGH);
 
+  loraSPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_NSS);
+
+  loraBeginCode = radio.begin(loraFreqMhz);
+
+  Serial.print("radio.begin -> ");
+  Serial.println(loraBeginCode);
+
+  if (loraBeginCode == RADIOLIB_ERR_NONE) {
+    loraOk = true;
+    Serial.println("LoRa OK");
+  } else {
+    loraOk = false;
+    Serial.println("LoRa ERROR");
+  }
+}
+
+void setupWeb() {
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(local_ip, gateway, subnet);
   WiFi.softAP(AP_SSID, AP_PASS);
@@ -173,6 +239,17 @@ void setup() {
   server.begin();
 
   Serial.println("Web server started");
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  Serial.println();
+  Serial.println("=== LoRa Link Test Web ===");
+
+  setupLoRa();
+  setupWeb();
 }
 
 void loop() {
