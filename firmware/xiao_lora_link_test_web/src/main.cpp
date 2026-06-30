@@ -128,9 +128,22 @@ String htmlPage() {
       color: #8cffb3;
       font-weight: 700;
     }
+    .warn {
+      color: #ffd36e;
+      font-weight: 700;
+    }
     .bad {
       color: #ff8c8c;
       font-weight: 700;
+    }
+    .pill {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #222a3a;
+      border: 1px solid #374158;
+      min-width: 52px;
+      text-align: center;
     }
     table {
       width: 100%;
@@ -171,11 +184,14 @@ String htmlPage() {
             <th>RSSI</th>
             <th>SNR</th>
             <th>Качество</th>
+            <th>RX</th>
+            <th>Lost</th>
+            <th>Last seen</th>
           </tr>
         </thead>
         <tbody id="peers">
           <tr>
-            <td colspan="5" class="muted">Маяки соседей пока не включены</td>
+            <td colspan="8" class="muted">Маяки соседей пока не включены</td>
           </tr>
         </tbody>
       </table>
@@ -213,19 +229,28 @@ async function updatePeers() {
     const tbody = document.getElementById('peers');
 
     if (!peers.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="muted">Соседи пока не слышны</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="muted">Соседи пока не слышны</td></tr>';
       return;
     }
 
-    tbody.innerHTML = peers.map(p => `
-      <tr>
-        <td>${p.callsign}</td>
-        <td>${p.ip}</td>
-        <td>${p.rssi}</td>
-        <td>${p.snr}</td>
-        <td>${p.quality}% / ${Math.floor(p.last_seen_ms / 1000)} сек</td>
-      </tr>
-    `).join('');
+    tbody.innerHTML = peers.map(p => {
+      let qClass = 'bad';
+      if (p.quality >= 80) qClass = 'ok';
+      else if (p.quality >= 50) qClass = 'warn';
+
+      return `
+        <tr>
+          <td><b>${p.callsign}</b></td>
+          <td>${p.ip}</td>
+          <td>${p.rssi} dBm</td>
+          <td>${p.snr}</td>
+          <td><span class="pill ${qClass}">${p.quality}%</span></td>
+          <td>${p.rx_count}</td>
+          <td>${p.lost_count}</td>
+          <td>${Math.floor(p.last_seen_ms / 1000)} сек</td>
+        </tr>
+      `;
+    }).join('');
   } catch(e) {
     console.log(e);
   }
