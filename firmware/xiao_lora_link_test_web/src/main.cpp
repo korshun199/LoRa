@@ -64,13 +64,15 @@ struct PeerInfo {
   uint32_t lastSeq;
   uint32_t rxCount;
   uint32_t lostCount;
-  uint8_t quality;
+  uint16_t quality;
   float rssi;
   float snr;
   uint32_t lastSeenMs;
 };
 
 const int MAX_PEERS = 16;
+const uint32_t PEER_OFFLINE_MS = 15000;
+const uint32_t PEER_DROP_MS = 60000;
 PeerInfo peers[MAX_PEERS];
 
 volatile bool loraPacketReceived = false;
@@ -293,33 +295,44 @@ void handleStatus() {
 }
 
 void handlePeers() {
-  StaticJsonDocument<2048> doc;
+  DynamicJsonDocument doc(4096);
   JsonArray arr = doc.to<JsonArray>();
 
   uint32_t now = millis();
 
   for (int i = 0; i < MAX_PEERS; i++) {
-    if (!peers[i].active) {
+    if (!peers[i].active) continue;
+
+    uint32_t ageMs = now - peers[i].lastSeenMs;
+
+    // Жёстко удаляем совсем старых соседей прямо перед выдачей API.
+    if (ageMs > PEER_DROP_MS) {
+      peers[i] = PeerInfo();
       continue;
     }
 
-    JsonObject item = arr.add<JsonObject>();
-    item["callsign"] = peers[i].callsign;
-    item["ip"] = peers[i].ip;
-    item["first_seq"] = peers[i].firstSeq;
-    item["last_seq"] = peers[i].lastSeq;
-    item["rx_count"] = peers[i].rxCount;
-    item["lost_count"] = peers[i].lostCount;
-    item["rssi"] = peers[i].rssi;
-    item["snr"] = peers[i].snr;
-    item["last_seen_ms"] = now - peers[i].lastSeenMs;
-    item["quality"] = peers[i].quality;
+    bool online = ageMs <= PEER_OFFLINE_MS;
+
+    JsonObject obj = arr.createNestedObject();
+    obj["callsign"] = peers[i].callsign;
+    obj["ip"] = peers[i].ip;
+    obj["first_seq"] = peers[i].firstSeq;
+    obj["last_seq"] = peers[i].lastSeq;
+    obj["rx_count"] = peers[i].rxCount;
+    obj["lost_count"] = peers[i].lostCount;
+    obj["rssi"] = peers[i].rssi;
+    obj["snr"] = peers[i].snr;
+    obj["last_seen_ms"] = ageMs;
+    obj["online"] = online;
+    obj["quality"] = online ? min((uint16_t)100, peers[i].quality) : 0;
   }
 
   String out;
   serializeJson(doc, out);
-  server.send(200, "application/json; charset=utf-8", out);
+  server.send(200, "application/json", out);
 }
+
+
 
 int findPeerSlot(const String& peerCallsign) {
   int freeSlot = -1;
@@ -421,6 +434,21 @@ void parseBeacon(const String& msg, float rssi, float snr) {
 
   updatePeerFromBeacon(peerCallsign, peerIp, seq, rssi, snr);
 }
+
+void cleanupPeers() {
+  uint32_t now = millis();
+
+  for (int i = 0; i < MAX_PEERS; i++) {
+    if (!peers[i].active) continue;
+
+    uint32_t ageMs = now - peers[i].lastSeenMs;
+    if (ageMs > PEER_DROP_MS) {
+      peers[i] = PeerInfo();
+    }
+  }
+}
+
+
 
 void pollLoRaReceive() {
   if (!loraOk) {
